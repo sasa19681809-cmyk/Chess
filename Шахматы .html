@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Шахматы: игра через ИИ</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #121212;
+      color: #f3f3f3;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: auto 390px;
+      gap: 24px;
+      padding: 24px;
+      align-items: start;
+    }
+
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, 58px);
+      grid-template-rows: repeat(8, 58px);
+      border: 4px solid #2c2c2c;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    }
+
+    .square {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 47px;
+      line-height: 1;
+      user-select: none;
+      cursor: pointer;
+    }
+
+    /* Более яркая и контрастная доска */
+    .light {
+      background: #eeeeee;
+    }
+
+    .dark {
+      background: #2d69d4;
+    }
+
+    .selected {
+      outline: 3px solid #ffe600;
+      outline-offset: -3px;
+    }
+
+    .legal {
+      box-shadow: inset 0 0 0 4px rgba(255, 230, 0, .95);
+    }
+
+    /* Контрастные фигуры */
+    .piece-white {
+      color: #ffffff;
+      text-shadow:
+        -2px -2px 0 #000,
+        2px -2px 0 #000,
+        -2px 2px 0 #000,
+        2px 2px 0 #000,
+        0 0 10px rgba(0, 0, 0, .75);
+    }
+
+    .piece-black {
+      color: #000000;
+      text-shadow:
+        -2px -2px 0 #fff,
+        2px -2px 0 #fff,
+        -2px 2px 0 #fff,
+        2px 2px 0 #fff,
+        0 0 10px rgba(255, 255, 255, .85);
+    }
+
+    button {
+      padding: 9px 12px;
+      border: 1px solid #444;
+      background: #232323;
+      color: #fff;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #2d2d2d;
+    }
+
+    button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .buttons,
+    .copy {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    #status {
+      min-height: 28px;
+      font-weight: 700;
+      margin: 12px 0;
+    }
+
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 6px 0 10px;
+      padding: 9px;
+      border-radius: 10px;
+      border: 1px solid #444;
+      background: #1b1b1b;
+      color: #fff;
+      font: inherit;
+      resize: vertical;
+    }
+
+    label {
+      display: block;
+      margin-top: 12px;
+      opacity: .85;
+      font-size: 14px;
+    }
+
+    #fen {
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 12px;
+      opacity: .75;
+    }
+
+    .hint {
+      opacity: .8;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .message-ok {
+      color: #8ef58e;
+      min-height: 20px;
+      font-size: 14px;
+      margin: 6px 0;
+    }
+
+    .message-error {
+      color: #ff9c9c;
+      min-height: 20px;
+      font-size: 14px;
+      margin: 6px 0;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      #board {
+        margin: 0 auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <div id="board" aria-label="Шахматная доска"></div>
+    </section>
+
+    <aside>
+      <h1>Игра через ИИ</h1>
+
+      <p class="hint">
+        1. Сделай свой ход на доске.<br />
+        2. Скопируй «Запрос для ИИ» и отправь мне.<br />
+        3. Вставь мой ответ в поле «Ответ ИИ».<br />
+        4. Нажми «Применить ход ИИ».
+      </p>
+
+      <div class="buttons">
+        <button id="newGame">Новая игра</button>
+        <button id="undo">Отменить ход</button>
+        <button id="playWhite">Играть белыми</button>
+        <button id="playBlack">Играть чёрными</button>
+      </div>
+
+      <div id="status" role="status"></div>
+
+      <label for="aiPrompt">Запрос для ИИ</label>
+      <textarea id="aiPrompt" rows="6" readonly></textarea>
+
+      <div class="copy">
+        <button id="copyPrompt">Скопировать запрос</button>
+        <button id="copyPgn">Скопировать PGN</button>
+        <button id="copyFen">Скопировать FEN</button>
+      </div>
+      <div id="copyMessage" class="message-ok"></div>
+
+      <label for="aiMoveInput">Ответ ИИ</label>
+      <textarea id="aiMoveInput" rows="3" placeholder="Вставь сюда мой ход, например: e5, Nf3, O-O, e2e4"></textarea>
+
+      <div class="copy">
+        <button id="applyAiMove">Применить ход ИИ</button>
+        <button id="pasteAiMove">Вставить из буфера</button>
+        <button id="clearAiMove">Очистить</button>
+      </div>
+      <div id="applyMessage" class="message-ok"></div>
+
+      <pre id="fen"></pre>
+    </aside>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.0/chess.min.js"></script>
+  <script>
+    if (typeof Chess === "undefined") {
+      document.body.innerHTML = `
+        <p style="padding:20px">
+          Не удалось загрузить chess.js. Проверь интернет или попроси сделать версию без внешней библиотеки.
+        </p>
+      `;
+      throw new Error("chess.js not loaded");
+    }
+
+    const boardEl = document.getElementById("board");
+    const statusEl = document.getElementById("status");
+    const fenEl = document.getElementById("fen");
+
+    const aiPromptEl = document.getElementById("aiPrompt");
+    const aiMoveInputEl = document.getElementById("aiMoveInput");
+
+    const copyPromptEl = document.getElementById("copyPrompt");
+    const copyPgnEl = document.getElementById("copyPgn");
+    const copyFenEl = document.getElementById("copyFen");
+    const copyMessageEl = document.getElementById("copyMessage");
+
+    const applyAiMoveEl = document.getElementById("applyAiMove");
+    const pasteAiMoveEl = document.getElementById("pasteAiMove");
+    const clearAiMoveEl = document.getElementById("clearAiMove");
+    const applyMessageEl = document.getElementById("applyMessage");
+
+    const newGameEl = document.getElementById("newGame");
+    const undoEl = document.getElementById("undo");
+    const playWhiteEl = document.getElementById("playWhite");
+    const playBlackEl = document.getElementById("playBlack");
+
+    let game = new Chess();
+    let humanColor = "w";
+    let selected = null;
+    let legalTargets = [];
+
+    // Используем залитые символы фигур, чтобы цвет задавать через CSS
+    const filledPiece = {
+      k: "♚",
+      q: "♛",
+      r: "♜",
+      b: "♝",
+      n: "♞",
+      p: "♟"
+    };
+
+    function humanColorName() {
+      return humanColor === "w" ? "белые" : "чёрные";
+    }
+
+    function aiColorName() {
+      return humanColor === "w" ? "чёрных" : "белых";
+    }
+
+    function getLastMoveSan() {
+      const history = game.history({ verbose: true });
+      return history.length ? history[history.length - 1].san : "";
+    }
+
+    function showCopyMessage(text, isError = false) {
+      copyMessageEl.textContent = text;
+      copyMessageEl.className = isError ? "message-error" : "message-ok";
+    }
+
+    function showApplyMessage(text, isError = false) {
+      applyMessageEl.textContent = text;
+      applyMessageEl.className = isError ? "message-error" : "message-ok";
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = "";
+
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const file = humanColor === "w" ? col : 7 - col;
+          const rank = humanColor === "w" ? 8 - row : row + 1;
+          const square = String.fromCharCode(97 + file) + rank;
+          const piece = game.get(square);
+
+          const div = document.createElement("div");
+          const isLight = (file + rank) % 2 === 0;
+          div.className = "square " + (isLight ? "light" : "dark");
+
+          if (selected === square) div.classList.add("selected");
+          if (legalTargets.includes(square)) div.classList.add("legal");
+
+          if (piece) {
+            div.textContent = filledPiece[piece.type];
+            div.classList.add(piece.color === "w" ? "piece-white" : "piece-black");
+          }
+
+          div.addEventListener("click", () => onSquareClick(square));
+          boardEl.appendChild(div);
+        }
+      }
+
+      updateStatus();
+    }
+
+    function onSquareClick(square) {
+      if (game.game_over()) return;
+
+      if (game.turn() !== humanColor) {
+        showApplyMessage("Сейчас не твой ход. Сначала примени ответ ИИ.", true);
+        return;
+      }
+
+      if (selected === square) {
+        selected = null;
+        legalTargets = [];
+        renderBoard();
+        return;
+      }
+
+      if (selected && legalTargets.includes(square)) {
+        makeHumanMove(selected, square);
+        return;
+      }
+
+      const piece = game.get(square);
+
+      if (piece && piece.color === humanColor) {
+        selected = square;
+        const moves = game.moves({ square, verbose: true });
+        legalTargets = [...new Set(moves.map(move => move.to))];
+        renderBoard();
+      } else {
+        selected = null;
+        legalTargets = [];
+        renderBoard();
+      }
+    }
+
+    function makeHumanMove(from, to) {
+      let ok = false;
+
+      try {
+        game.move({ from, to, promotion: "q" });
+        ok = true;
+      } catch (err) {
+        try {
+          game.move({ from, to });
+          ok = true;
+        } catch (err2) {
+          ok = false;
+        }
+      }
+
+      selected = null;
+      legalTargets = [];
+      renderBoard();
+
+      if (ok) {
+        showApplyMessage("Ход сделан. Скопируй запрос и отправь мне.", false);
+        aiPromptEl.select();
+      } else {
+        showApplyMessage("Не получилось сделать этот ход.", true);
+      }
+    }
+
+    function updateStatus() {
+      let text = "";
+
+      if (game.in_checkmate()) {
+        const winner = game.turn() === "w" ? "b" : "w";
+        text =
+          `Мат! Победили ${winner === "w" ? "белые" : "чёрные"}.` +
+          (winner === humanColor ? " Ты победил! 🎉" : " ИИ победил.");
+      } else if (game.in_stalemate()) {
+        text = "Пат. Ничья.";
+      } else if (game.in_threefold_repetition()) {
+        text = "Ничья: троекратное повторение позиции.";
+      } else if (game.insufficient_material()) {
+        text = "Ничья: недостаточно материала.";
+      } else if (game.in_draw()) {
+        text = "Ничья.";
+      } else {
+        const inCheck = typeof game.in_check === "function" ? game.in_check() : false;
+
+        if (game.turn() === humanColor) {
+          text = `Твой ход (${humanColorName()}).`;
+        } else {
+          text = "Ожидается ход ИИ. Скопируй запрос и вставь мой ответ.";
+        }
+
+        if (inCheck) text += " Шах!";
+      }
+
+      statusEl.textContent = text;
+      fenEl.textContent = `FEN: ${game.fen()}`;
+
+      updatePrompt();
+      updateControls();
+    }
+
+    function updatePrompt() {
+      if (game.game_over()) {
+        aiPromptEl.value = `Партия завершена. ${statusEl.textContent}`;
+        return;
+      }
+
+      if (game.turn() === humanColor) {
+        aiPromptEl.value =
+          "Сейчас твой ход. Сделай ход на доске, затем скопируй запрос.";
+        return;
+      }
+
+      const history = game.history({ verbose: true });
+      const lastMove = history.length ? history[history.length - 1] : null;
+
+      if (!history.length) {
+        aiPromptEl.value =
+          `Начни партию за ${aiColorName()}. ` +
+          `Ответь одним шахматным ходом в формате SAN, например: e4, Nf3, O-O.`;
+      } else {
+        aiPromptEl.value =
+          `Мой ход: ${lastMove ? lastMove.san : ""}. ` +
+          `PGN: ${game.pgn()}. ` +
+          `FEN: ${game.fen()}. ` +
+          `Ответь одним ходом за ${aiColorName()} в формате SAN, например: e5.`;
+      }
+    }
+
+    function updateControls() {
+      const aiTurn = !game.game_over() && game.turn() !== humanColor;
+
+      copyPromptEl.disabled = !aiTurn;
+      applyAiMoveEl.disabled = !aiTurn;
+      undoEl.disabled = game.history().length === 0;
+    }
+
+    function startNewGame(color = humanColor) {
+      humanColor = color;
+      game = new Chess();
+      selected = null;
+      legalTargets = [];
+
+      aiMoveInputEl.value = "";
+      showApplyMessage("", false);
+      showCopyMessage("", false);
+
+      renderBoard();
+    }
+
+    function undoMove() {
+      if (game.history().length === 0) return;
+
+      game.undo();
+
+      if (game.turn() !== humanColor && game.history().length > 0) {
+        game.undo();
+      }
+
+      selected = null;
+      legalTargets = [];
+      renderBoard();
+      showApplyMessage("Последние ходы отменены.", false);
+    }
+
+    function normalizeRussian(text) {
+      return String(text)
+        .replace(/Кр/g, "K")
+        .replace(/кр/g, "K")
+        .replace(/Ф/g, "Q")
+        .replace(/ф/g, "Q")
+        .replace(/Л/g, "R")
+        .replace(/л/g, "R")
+        .replace(/С/g, "B")
+        .replace(/с/g, "B")
+        .replace(/К/g, "N")
+        .replace(/к/g, "N")
+        .replace(/0-0-0/g, "O-O-O")
+        .replace(/0-0/g, "O-O");
+    }
+
+    function extractCandidates(text) {
+      const normalized = normalizeRussian(text);
+      const candidates = [];
+
+      const push = (value) => {
+        const v = String(value || "").trim();
+        if (v && !candidates.includes(v)) candidates.push(v);
+      };
+
+      push(normalized);
+
+      const castlingMatches = normalized.match(/\b(?:O-O-O|O-O)\b/gi) || [];
+      castlingMatches.slice().reverse().forEach(push);
+
+      const coordMatches = normalized.match(
+        /\b[a-h][1-8][x\-–]?[a-h][1-8](?:=?[qrbn])?\b/gi
+      ) || [];
+      coordMatches.slice().reverse().forEach(push);
+
+      const sanMatches = normalized.match(
+        /\b(?:O-O-O|O-O|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=?[QRBN])?(?:[+#])?)\b/gi
+      ) || [];
+      sanMatches.slice().reverse().forEach(push);
+
+      const tokens = normalized.split(/[\s,;:()\[\]{}<>«»"'`.,!?]+/);
+      tokens.slice().reverse().forEach(push);
+
+      return candidates;
+    }
+
+    function tryApplyCandidate(raw) {
+      let candidate = normalizeRussian(String(raw)).trim();
+      candidate = candidate.replace(/[.,;:!?]+$/, "");
+      if (!candidate) return false;
+
+      candidate = candidate.replace(
+        /^([a-h][1-8])([qrbn])$/i,
+        (m, square, promo) => `${square}=${promo.toUpperCase()}`
+      );
+
+      const variants = [];
+
+      const pushVariant = (value) => {
+        const v = String(value || "").trim();
+        if (v && !variants.includes(v)) variants.push(v);
+      };
+
+      pushVariant(candidate);
+
+      const noCheck = candidate.replace(/[+#]+$/, "");
+      pushVariant(noCheck);
+
+      const castlingFixed = noCheck
+        .replace(/0-0-0/gi, "O-O-O")
+        .replace(/0-0/gi, "O-O");
+      pushVariant(castlingFixed);
+
+      if (/^[kqrbn]/.test(castlingFixed)) {
+        pushVariant(castlingFixed.charAt(0).toUpperCase() + castlingFixed.slice(1));
+      }
+
+      if (/^[KQRBN]/.test(castlingFixed)) {
+        pushVariant(castlingFixed.charAt(0).toUpperCase() + castlingFixed.slice(1).toLowerCase());
+      }
+
+      for (const variant of variants) {
+        try {
+          game.move(variant);
+          return true;
+        } catch (err) {
+          // пробуем следующий вариант
+        }
+      }
+
+      const cleaned = noCheck.replace(/=/g, "");
+      const coordMatch = cleaned.match(/^([a-h][1-8])[x\-–]?([a-h][1-8])([qrbn])?$/i);
+
+      if (coordMatch) {
+        const from = coordMatch[1].toLowerCase();
+        const to = coordMatch[2].toLowerCase();
+        const promo = coordMatch[3] ? coordMatch[3].toLowerCase() : "q";
+
+        try {
+          game.move({ from, to, promotion: promo });
+          return true;
+        } catch (err) {
+          try {
+            game.move({ from, to });
+            return true;
+          } catch (err2) {
+            // ignore
+          }
+        }
+      }
+
+      const squares = candidate.match(/[a-h][1-8]/gi);
+
+      if (squares && squares.length >= 2) {
+        const from = squares[0].toLowerCase();
+        const to = squares[1].toLowerCase();
+
+        const promoMatch = candidate.match(/=([QRBNqrbn])\b/);
+        const promo = promoMatch ? promoMatch[1].toLowerCase() : "q";
+
+        try {
+          game.move({ from, to, promotion: promo });
+          return true;
+        } catch (err) {
+          try {
+            game.move({ from, to });
+            return true;
+          } catch (err2) {
+            // ignore
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function applyAiMove() {
+      if (game.game_over()) {
+        showApplyMessage("Партия уже завершена.", true);
+        return;
+      }
+
+      if (game.turn() === humanColor) {
+        showApplyMessage("Сейчас твой ход. Сначала сделай свой ход.", true);
+        return;
+      }
+
+      const text = aiMoveInputEl.value;
+      if (!text.trim()) {
+        showApplyMessage("Вставь ответ ИИ в поле выше.", true);
+        return;
+      }
+
+      const candidates = extractCandidates(text);
+
+      for (const candidate of candidates) {
+        if (tryApplyCandidate(candidate)) {
+          aiMoveInputEl.value = "";
+          selected = null;
+          legalTargets = [];
+
+          renderBoard();
+
+          const lastSan = getLastMoveSan();
+          showApplyMessage(`Ход ИИ применён: ${lastSan}. Теперь твой ход.`, false);
+          return;
+        }
+      }
+
+      showApplyMessage(
+        "Не удалось распознать ход. Используй формат: e5, Nf3, O-O, e2e4 или e7e8=Q.",
+        true
+      );
+    }
+
+    async function copyText(text, message) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showCopyMessage(message, false);
+      } catch (err) {
+        try {
+          const textarea = document.createElement("textarea");
+          textarea.value = text;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          textarea.remove();
+          showCopyMessage(message, false);
+        } catch (err2) {
+          showCopyMessage("Не удалось скопировать автоматически.", true);
+        }
+      }
+    }
+
+    newGameEl.addEventListener("click", () => startNewGame(humanColor));
+    playWhiteEl.addEventListener("click", () => startNewGame("w"));
+    playBlackEl.addEventListener("click", () => startNewGame("b"));
+    undoEl.addEventListener("click", undoMove);
+
+    copyPromptEl.addEventListener("click", () => {
+      copyText(aiPromptEl.value, "Запрос скопирован. Вставь его мне в чат.");
+    });
+
+    copyPgnEl.addEventListener("click", () => {
+      copyText(game.pgn(), "PGN скопирован.");
+    });
+
+    copyFenEl.addEventListener("click", () => {
+      copyText(game.fen(), "FEN скопирован.");
+    });
+
+    applyAiMoveEl.addEventListener("click", applyAiMove);
+
+    pasteAiMoveEl.addEventListener("click", async () => {
+      try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) {
+          throw new Error("Clipboard API unavailable");
+        }
+
+        const text = await navigator.clipboard.readText();
+
+        if (!text.trim()) {
+          showApplyMessage("Буфер обмена пуст.", true);
+          return;
+        }
+
+        aiMoveInputEl.value = text;
+        showApplyMessage("Текст вставлен из буфера.", false);
+        aiMoveInputEl.focus();
+      } catch (err) {
+        showApplyMessage("Браузер не разрешил чтение буфера. Кликни в поле и нажми Ctrl+V.", true);
+        aiMoveInputEl.focus();
+      }
+    });
+
+    clearAiMoveEl.addEventListener("click", () => {
+      aiMoveInputEl.value = "";
+      showApplyMessage("", false);
+    });
+
+    renderBoard();
+  </script>
+</body>
+</html>
